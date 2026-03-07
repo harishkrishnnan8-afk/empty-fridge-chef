@@ -49,7 +49,7 @@ app.post("/api/generate-recipe", async (req, res) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama3-70b-8192",
+        model: "llama-3.3-70b-versatile",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `My ingredients: ${ingredients.trim()}` },
@@ -63,36 +63,60 @@ app.post("/api/generate-recipe", async (req, res) => {
       const errText = await groqResponse.text();
       console.error("Groq API error:", groqResponse.status, errText);
 
+      let errorMessage = "AI service error. Please try again.";
+      try {
+        const errJson = JSON.parse(errText);
+        if (errJson.error?.message) {
+          errorMessage = `AI Error: ${errJson.error.message}`;
+        }
+      } catch (e) {
+        // Not JSON
+      }
+
       if (groqResponse.status === 429) {
         return res.status(429).json({ error: "Too many requests. Please wait a moment and try again." });
       }
       if (groqResponse.status === 401) {
         return res.status(401).json({ error: "Invalid API key. Please check your GROQ_API_KEY." });
       }
-      return res.status(500).json({ error: "AI service error. Please try again." });
+      return res.status(groqResponse.status).json({ error: errorMessage });
     }
 
     const data = await groqResponse.json();
     const content = data.choices?.[0]?.message?.content;
 
+    // Extract JSON from AI response (handles Groq sometimes adding text before/after)
     if (!content) {
       return res.status(500).json({ error: "No response received from AI." });
     }
 
-    // Strip markdown code fences if present
     let cleaned = content.trim();
-    if (cleaned.startsWith("```")) {
-      cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      cleaned = jsonMatch[0];
     }
 
-    const recipe = JSON.parse(cleaned);
-    return res.json(recipe);
+    try {
+      const recipe = JSON.parse(cleaned);
+      return res.json(recipe);
+    } catch (parseErr) {
+      console.error("Failed to parse recipe JSON:", cleaned);
+      return res.status(500).json({ error: "AI returned invalid recipe format. Please try again." });
+    }
   } catch (err) {
     console.error("generate-recipe error:", err);
     return res.status(500).json({
       error: err instanceof Error ? err.message : "Failed to generate recipe. Please try again.",
     });
   }
+});
+
+// Global error handler to ensure JSON response
+app.use((err, req, res, next) => {
+  console.error("Global error:", err);
+  res.status(err.status || 500).json({
+    error: err.message || "Internal Server Error",
+  });
 });
 
 // Health check
