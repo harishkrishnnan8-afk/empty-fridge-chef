@@ -36,7 +36,14 @@ const Index = () => {
         }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (parseErr) {
+        console.error("Server returned non-JSON response:", text);
+        throw new Error(`Invalid server response. Please check your backend logs.`);
+      }
 
       if (!res.ok || data?.error) {
         throw new Error(data?.error || `Server error: ${res.status}`);
