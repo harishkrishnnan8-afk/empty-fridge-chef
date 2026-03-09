@@ -42,7 +42,11 @@ const Index = () => {
         data = JSON.parse(text);
       } catch (parseErr) {
         console.error("Server returned non-JSON response:", text);
-        throw new Error(`Invalid server response. Please check your backend logs.`);
+        if (text.includes("<!DOCTYPE html>") || text.includes("<html")) {
+          throw new Error("Backend server not reached. Please ensure you started the app with 'npm run dev:full'.");
+        }
+        const snippet = text.length > 50 ? text.substring(0, 50) + "..." : text;
+        throw new Error(`Invalid response: ${snippet || "Empty"}. Please check backend logs.`);
       }
 
       if (!res.ok || data?.error) {

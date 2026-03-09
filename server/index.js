@@ -11,37 +11,37 @@ dotenv.config({ path: join(__dirname, "..", ".env") });
 const app = express();
 const PORT = process.env.API_PORT || 3001;
 
-app.use(cors({ origin: ["http://localhost:8080", "http://localhost:5173"] }));
+app.use(cors()); // Allow all origins in dev for easier local testing
 app.use(express.json());
 
 app.post("/api/generate-recipe", async (req, res) => {
   const { ingredients, cuisine, difficulty } = req.body;
 
   if (!ingredients || !ingredients.trim()) {
+    console.error("❌ Rejected: Missing ingredients");
     return res.status(400).json({ error: "Ingredients are required." });
   }
 
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
   if (!GROQ_API_KEY) {
-    console.error("GROQ_API_KEY is not set in environment variables.");
-    return res.status(500).json({ error: "Server misconfiguration: GROQ_API_KEY not set." });
+    console.error("❌ GROQ_API_KEY is missing from .env");
+    return res.status(500).json({ error: "Server misconfiguration: GROQ_API_KEY not found." });
   }
 
   const cuisineNote = cuisine && cuisine !== "any" ? ` Prefer ${cuisine} cuisine.` : "";
   const difficultyNote = difficulty && difficulty !== "any" ? ` Difficulty level: ${difficulty}.` : "";
 
   const systemPrompt =
-    `You are a professional chef. The user gives you ingredients they have at home. ` +
-    `Generate a detailed recipe using ONLY those ingredients (plus basic pantry staples like salt, pepper, oil, water). ` +
-    `Return ONLY a valid JSON object with these exact fields: ` +
-    `recipeName (string), cuisine (string), difficulty (string - Easy/Medium/Hard), ` +
-    `prepTime (string like "10 mins"), cookTime (string like "20 mins"), servings (number), ` +
-    `ingredients (array of strings with quantities), steps (array of strings - detailed instructions), ` +
-    `nutrition (object with calories, protein, carbs, fat as strings like "350 kcal"), ` +
-    `proTip (string - a helpful cooking tip).` +
-    `${cuisineNote}${difficultyNote} Return ONLY valid JSON, no markdown, no code blocks.`;
+    `You are a professional chef. Generate a detailed recipe using the provided ingredients. ` +
+    `Return ONLY a valid JSON object. Do not include markdown code blocks, do not include any text before or after the JSON. ` +
+    `Fields required: recipeName, cuisine, difficulty (Easy/Medium/Hard), prepTime, cookTime, servings (number), ingredients (array), steps (array), nutrition (object with calories, protein, carbs, fat), proTip.` +
+    `${cuisineNote}${difficultyNote}`;
+
+  console.log(`\n🍳 Recipe Request: "${ingredients.trim()}"`);
+  console.log(`   Options: ${cuisine} cuisine, ${difficulty} difficulty`);
 
   try {
+    console.log("   -> Contacting Groq AI...");
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -52,44 +52,35 @@ app.post("/api/generate-recipe", async (req, res) => {
         model: "llama-3.3-70b-versatile",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: `My ingredients: ${ingredients.trim()}` },
+          { role: "user", content: `Ingredients: ${ingredients.trim()}` },
         ],
-        temperature: 0.8,
+        temperature: 0.7,
         max_tokens: 1500,
       }),
     });
 
     if (!groqResponse.ok) {
       const errText = await groqResponse.text();
-      console.error("Groq API error:", groqResponse.status, errText);
+      console.error(`❌ Groq API Error (${groqResponse.status}):`, errText);
 
-      let errorMessage = "AI service error. Please try again.";
+      let msg = "AI service error. Please try again.";
       try {
         const errJson = JSON.parse(errText);
-        if (errJson.error?.message) {
-          errorMessage = `AI Error: ${errJson.error.message}`;
-        }
-      } catch (e) {
-        // Not JSON
-      }
+        msg = errJson.error?.message || msg;
+      } catch (e) { }
 
-      if (groqResponse.status === 429) {
-        return res.status(429).json({ error: "Too many requests. Please wait a moment and try again." });
-      }
-      if (groqResponse.status === 401) {
-        return res.status(401).json({ error: "Invalid API key. Please check your GROQ_API_KEY." });
-      }
-      return res.status(groqResponse.status).json({ error: errorMessage });
+      return res.status(groqResponse.status).json({ error: msg });
     }
 
     const data = await groqResponse.json();
     const content = data.choices?.[0]?.message?.content;
 
-    // Extract JSON from AI response (handles Groq sometimes adding text before/after)
     if (!content) {
-      return res.status(500).json({ error: "No response received from AI." });
+      console.error("❌ AI returned empty response");
+      return res.status(500).json({ error: "No response from AI service." });
     }
 
+    // Extraction logic for robustness
     let cleaned = content.trim();
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -98,32 +89,39 @@ app.post("/api/generate-recipe", async (req, res) => {
 
     try {
       const recipe = JSON.parse(cleaned);
+      console.log("   ✅ Recipe generated successfully!");
       return res.json(recipe);
     } catch (parseErr) {
-      console.error("Failed to parse recipe JSON:", cleaned);
-      return res.status(500).json({ error: "AI returned invalid recipe format. Please try again." });
+      console.error("❌ Failed to parse AI response as JSON:", cleaned);
+      return res.status(500).json({ error: "AI returned invalid format. Please try again." });
     }
   } catch (err) {
-    console.error("generate-recipe error:", err);
+    console.error("❌ Server Error:", err);
     return res.status(500).json({
-      error: err instanceof Error ? err.message : "Failed to generate recipe. Please try again.",
+      error: err instanceof Error ? err.message : "Internal server error during generation.",
     });
   }
 });
 
-// Global error handler to ensure JSON response
+// Health check
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Global error handler
 app.use((err, req, res, next) => {
-  console.error("Global error:", err);
+  console.error("🔥 Global error handler:", err);
   res.status(err.status || 500).json({
     error: err.message || "Internal Server Error",
   });
 });
 
-// Health check
-app.get("/api/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
+if (process.env.NODE_ENV !== "production") {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`\n🚀 Backend running at http://127.0.0.1:${PORT}`);
+    console.log(`   Health check: http://127.0.0.1:${PORT}/api/health\n`);
+  });
+}
 
-app.listen(PORT, () => {
-  console.log(`\n🚀 Backend API server running at http://localhost:${PORT}`);
-  console.log(`   POST /api/generate-recipe  — Groq-powered recipe generator`);
-  console.log(`   GET  /api/health           — Health check\n`);
-});
+// Export for Vercel
+export default app;
