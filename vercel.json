@@ -13,7 +13,7 @@
     ],
     "functions": {
         "server/index.js": {
-            "runtime": "@vercel/node@3.0.0",
+            "runtime": "@vercel/node",
             "memory": 1024,
             "maxDuration": 60
         }
