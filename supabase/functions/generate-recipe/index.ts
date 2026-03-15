@@ -2,8 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -40,6 +39,8 @@ serve(async (req) => {
       `proTip (string - a helpful cooking tip).` +
       `${cuisineNote}${difficultyNote} Return ONLY valid JSON, no markdown, no code blocks.`;
 
+    console.log(`🍳 Calling Groq for ingredients: ${ingredients.trim()}`);
+
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -47,7 +48,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama3-70b-8192",
+        model: "llama-3.3-70b-versatile",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `My ingredients: ${ingredients.trim()}` },
@@ -85,18 +86,37 @@ serve(async (req) => {
     let cleaned = content.trim();
     if (cleaned.startsWith("```")) {
       cleaned = cleaned.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    } else {
+      // More robust extraction if AI includes babble
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+         cleaned = jsonMatch[0];
+      }
     }
 
-    const recipe = JSON.parse(cleaned);
-
-    return new Response(JSON.stringify(recipe), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    try {
+      const recipe = JSON.parse(cleaned);
+      return new Response(JSON.stringify(recipe), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } catch (parseErr) {
+      console.error("Failed to parse AI response as JSON:", cleaned);
+      return new Response(JSON.stringify({ error: "AI returned invalid format. Please try again." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
   } catch (e) {
-    console.error("generate-recipe error:", e);
+    console.error("🔥 generate-recipe error:", e);
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Failed to generate recipe" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ 
+        error: e instanceof Error ? e.message : "An unexpected error occurred",
+        details: String(e)
+      }),
+      { 
+        status: 500, 
+        headers: { ...corsHeaders, "Content-Type": "application/json" } 
+      }
     );
   }
 });

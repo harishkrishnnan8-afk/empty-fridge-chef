@@ -10,16 +10,6 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
-    // ✅ Proxy /api calls to the Express backend (keeps GROQ_API_KEY secure)
-    proxy: {
-      "/api": {
-        target: "http://127.0.0.1:3001",
-        changeOrigin: true,
-        secure: false,
-        timeout: 60000,
-        proxyTimeout: 60000,
-      },
-    },
   },
   plugins: [react()].filter(Boolean),
   resolve: {

@@ -1,38 +1,47 @@
-# Empty Fridge Chef
+# Empty Fridge Chef 🎉
 
 An AI-powered recipe generator that helps you turn leftover ingredients into delicious meals.
 
-## Project info
+## Project Architecture
 
-This project uses a React frontend (Vite) and an Express backend to securely generate recipes using the Groq AI API.
+This project uses a modern serverless architecture:
+- **Frontend**: React (Vite) hosted on Vercel.
+- **Backend**: Supabase Edge Functions (Deno) for secure AI processing.
+- **AI Engine**: Groq API (Llama-3.3-70b) for lightning-fast recipe generation.
 
 ## How to Run Locally
 
-Follow these steps to get the project running on your machine:
+### 1. Clone & Install
+```sh
+npm install
+```
 
-1. **Clone the repository**
-2. **Install dependencies**:
-   ```sh
-   npm install
-   ```
-3. **Set up Environment Variables**:
-   Create a `.env` file in the root directory and add your Groq API key:
-   ```
-   GROQ_API_KEY=your_key_here
-   ```
-4. **Start the development server**:
-   ```sh
-   npm run dev:full
-   ```
+### 2. Set up Environment Variables
+Create a `.env` file in the root directory:
+```env
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_PUBLISHABLE_KEY=your_supabase_anon_key
+```
 
-> **Note:** Running `npm run dev:full` starts both the Vite frontend (port 8080) and the Express backend (port 3001).
+### 3. Set up Supabase Edge Function
+Ensure you have the Supabase CLI installed and your Groq API key set:
+```sh
+supabase secrets set GROQ_API_KEY=your_groq_api_key
+```
+
+### 4. Start Development Server
+```sh
+npm run dev
+```
 
 ## Technologies Used
 
-- **Frontend**: Vite, React, TypeScript, shadcn-ui, Tailwind CSS
-- **Backend**: Node.js, Express, Groq AI SDK
-- **Database**: Supabase (optional for future features)
+- **Frontend**: Vite, React, TypeScript, shadcn/ui, Tailwind CSS
+- **Backend**: Supabase Edge Functions (Deno)
+- **AI**: Groq API (llama-3.3-70b-versatile)
 
 ## Deployment
 
-The project can be deployed to platforms like Vercel or Netlify. Ensure you set the `GROQ_API_KEY` in your deployment platform's environment variables.
+1. **Frontend**: Connect your GitHub repo to Vercel.
+2. **Backend**: Deploy your edge functions using `supabase functions deploy generate-recipe`.
+3. **Secrets**: Ensure `GROQ_API_KEY` is set in Supabase Secrets.

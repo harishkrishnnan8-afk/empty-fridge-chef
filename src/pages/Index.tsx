@@ -3,6 +3,7 @@ import { AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
 import { toast } from "@/hooks/use-toast";
 import { Recipe } from "@/types/recipe";
+import { supabase } from "@/integrations/supabase/client";
 import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
 import LoadingState from "@/components/LoadingState";
@@ -25,32 +26,26 @@ const Index = () => {
     setRecipe(null);
 
     try {
-      // ✅ Calls our secure backend — GROQ_API_KEY never reaches the browser
-      const res = await fetch("/api/generate-recipe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // ✅ Calls our secure Supabase Edge Function — GROQ_API_KEY never reaches the browser
+      const { data, error } = await supabase.functions.invoke("generate-recipe", {
+        body: {
           ingredients: ingredients.trim(),
           cuisine: cuisine === "any" ? "any" : cuisine,
           difficulty: difficulty === "any" ? "any" : difficulty,
-        }),
+        },
       });
 
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (parseErr) {
-        console.error("Server returned non-JSON response:", text);
-        if (text.includes("<!DOCTYPE html>") || text.includes("<html")) {
-          throw new Error("Backend server not reached. Please ensure you started the app with 'npm run dev:full'.");
+      if (error) {
+        console.error("❌ Supabase function error:", error);
+        // If the error looks like a 404, it likely means the function isn't deployed
+        if (error.message?.includes("not found") || error.status === 404) {
+          throw new Error("Function not found. Did you run 'supabase functions deploy generate-recipe'?");
         }
-        const snippet = text.length > 50 ? text.substring(0, 50) + "..." : text;
-        throw new Error(`Invalid response: ${snippet || "Empty"}. Please check backend logs.`);
+        throw new Error(error.message || "Failed to generate recipe");
       }
 
-      if (!res.ok || data?.error) {
-        throw new Error(data?.error || `Server error: ${res.status}`);
+      if (!data || data.error) {
+        throw new Error(data?.error || "AI service returned an empty response.");
       }
 
       setRecipe(data as Recipe);
